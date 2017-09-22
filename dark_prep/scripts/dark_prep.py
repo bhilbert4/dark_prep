@@ -12,17 +12,24 @@ I'm still not sure if it is worth breaking out into 3 separate
 input files for the refactored simulator...
 '''
 
-import argparse
 import sys, os
+import imp
+import argparse
 import numpy as np
-from astropy.io import fits
+from astropy.io import fits, ascii
 import yaml
 import read_fits
+
+# Allowed instruments
+inst_list = ['nircam']
 
 class DarkPrep:
 
     def __init__(self):
-        pass
+        # Locate the module files, so that we know where to look
+        # for config subdirectory
+        self.modpath = imp.find_module('dark_prep')[1]
+
 
     def run(self):
         # Read in the yaml parameter file
@@ -91,7 +98,6 @@ class DarkPrep:
             if self.params['Readout']['readpatt'].upper() == 'RAPID':
                 print("Output is rapid, grabbing zero frame from linearized dark")
                 self.zeroModel = read_fits.Read_fits()
-                #can't grab all zeroframes (for multiple ints)'
                 self.zeroModel.data = self.linDark.data[:,0,:,:] 
                 self.zeroModel.sbAndRefpix = self.linDark.sbAndRefpix[:,0,:,:]
             elif ((self.params['Readout']['readpatt'].upper() != 'RAPID') & (self.dark.zeroframe is not None)):
@@ -101,10 +107,18 @@ class DarkPrep:
                 # into a RampModel instance before running the
                 # pipeline steps
                 self.zeroModel = read_fits.Read_fits()
-                self.zeroModel.data = self.dark.zeroframe
+                self.zeroModel.data = np.expand_dims(self.dark.zeroframe,axis=1)
                 self.zeroModel.header = self.linDark.header
                 self.zeroModel.header['NGROUPS'] = 1
                 self.zeroModel = self.linearizeDark(self.zeroModel)
+                # Return the zeroModel data to 3 dimensions
+                # integrations, y, x
+                self.zeroModel.data = self.zeroModel.data[:,0,:,:]
+                self.zeroModel.sbAndRefpix = self.zeroModel.sbAndRefpix[:,0,:,:]
+                # In this case the zeroframe has changed from what
+                # was read in. So let's remove the original zeroframe
+                # to avoid confusion
+                self.linDark.zeroframe = np.zeros(self.linDark.zeroframe.shape)
             else:
                 self.zeroModel = None
 
@@ -114,13 +128,13 @@ class DarkPrep:
             self.linDark= self.cropDark(self.linDark)
             if self.zeroModel is not None:
                 self.zeroModel = self.cropDark(self.zeroModel)
-        else:
+        elif ((self.params['Inst']['use_JWST_pipeline'] == False) & (self.runStep['linearized_darkfile'] == True)):
 
             # If no pipeline is run
             self.zeroModel = read_fits.Read_fits()
             self.zeroModel.data = self.dark.zeroframe
             self.zeroModel.sbAndRefpix = sbzeroframe
-
+            
             # Crop the linearized dark to the requested
             # subarray size
             # THIS WILL CROP self.dark AS WELL SINCE
@@ -129,7 +143,13 @@ class DarkPrep:
             self.linDark = self.cropDark(self.linDark)
             if self.zeroModel.data is not None:
                 self.zeroModel = self.cropDark(self.zeroModel)
-
+        else:
+            print("Mode not yet supported! Must use either:")
+            print("use_JWST_pipeline = True and a raw or linearized dark")
+            print("or use_JWST_pipeline = False and supply a linearized dark.")
+            print("Cannot yet skip the pipeline and provide a raw dark.")
+            sys.exit()
+                
         #save the linearized dark for testing
         if self.params['Output']['save_intermediates']:
             h0=fits.PrimaryHDU()
@@ -163,12 +183,25 @@ class DarkPrep:
                                'refpix_configfile','linear_configfile'],
                     'Output':['file','directory']}
 
+        config_files = {'Reffiles-readpattdefs':'nircam_read_pattern_definitions.list'
+                        ,'Reffiles-subarray_defs':'NIRCam_subarray_definitions.list'
+                        ,'newRamp-dq_configfile':'dq_init.cfg'
+                        ,'newRamp-sat_configfile':'saturation.cfg'
+                        ,'newRamp-superbias_configfile':'superbias.cfg'
+                        ,'newRamp-refpix_configfile':'refpix.cfg'
+                        ,'newRamp-linear_configfile':'linearity.cfg'}
+        
         for key1 in pathdict:
             for key2 in pathdict[key1]:
-                if self.params[key1][key2].lower() != 'none':
+                if self.params[key1][key2].lower() not in ['none','config']:
                     self.params[key1][key2] = os.path.abspath(self.params[key1][key2])
+                elif self.params[key1][key2].lower() == 'config':
+                    cfile = config_files['{}-{}'.format(key1,key2)]
+                    fpath = os.path.join(self.modpath,'config',cfile)
+                    self.params[key1][key2] = fpath
+                    print("'config' specified: Using {} for {}:{} input file".format(fpath,key1,key2))
 
-
+                    
     def getBaseDark(self):
         #read in the dark current ramp that will serve as the
         #base for the simulated ramp
@@ -613,7 +646,7 @@ class DarkPrep:
 
 
         
-    def readpatternCheck(self):
+    def readPatternCheck(self):
         '''check the readout pattern that's entered and set nframe and nskip 
            accordingly'''
         self.params['Readout']['readpatt'] = self.params['Readout']['readpatt'].upper()
@@ -663,7 +696,15 @@ class DarkPrep:
                 print("setting the readout pattern to 'ANY' in order to allow the output file to be saved via RampModel without error.")
                 self.params['readpatt'] = 'ANY'
 
-        
+
+    def checkRunStep(self,filename):
+        #check to see if a filename exists in the parameter file.
+        if ((len(filename) == 0) or (filename.lower() == 'none')):
+            return False
+        else:
+            return True
+
+                
     def checkParams(self):
         # Check instrument name
         if self.params['Inst']['instrument'].lower() not in inst_list:
@@ -705,7 +746,7 @@ class DarkPrep:
             print("WARNING: Input value of nint is not an integer.")
             sys.exit
 
-
+            
         # Make sure that the requested number of groups is
         # less than or equal to the maximum allowed. If you're
         # continuing on with an unknown readout pattern (not
@@ -731,6 +772,9 @@ class DarkPrep:
         self.runStep = {}
         #self.runStep['linearity'] = self.checkRunStep(self.params['Reffiles']['linearity'])
         self.runStep['linearized_darkfile'] = self.checkRunStep(self.params['Reffiles']['linearized_darkfile'])
+        self.runStep['saturation_lin_limit'] = self.checkRunStep(self.params['Reffiles']['saturation'])
+        self.runStep['superbias'] = self.checkRunStep(self.params['Reffiles']['superbias'])
+        self.runStep['linearity'] = self.checkRunStep(self.params['Reffiles']['linearity'])
 
         # NON-LINEARITY
         #make sure the input accuracy is a float with reasonable bounds
