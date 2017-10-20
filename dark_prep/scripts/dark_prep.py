@@ -18,7 +18,7 @@ import argparse
 import numpy as np
 from astropy.io import fits, ascii
 import yaml
-import read_fits
+from . import read_fits
 
 # Allowed instruments
 inst_list = ['nircam']
@@ -125,7 +125,8 @@ class DarkPrep:
             # Now crop self.linDark, self.dark, and zeroModel
             # to requested subarray
             self.dark = self.cropDark(self.dark)
-            self.linDark= self.cropDark(self.linDark)
+            self.linDark = self.cropDark(self.linDark)
+
             if self.zeroModel is not None:
                 self.zeroModel = self.cropDark(self.zeroModel)
         elif ((self.params['Inst']['use_JWST_pipeline'] == False) & (self.runStep['linearized_darkfile'] == True)):
@@ -152,11 +153,11 @@ class DarkPrep:
                 
         #save the linearized dark for testing
         if self.params['Output']['save_intermediates']:
-            h0=fits.PrimaryHDU()
+            h0 = fits.PrimaryHDU()
             h1 = fits.ImageHDU(self.linDark.data)
-            h2 = fits.ImageHDU(self.linDark.sbAndRefPix)
+            h2 = fits.ImageHDU(self.linDark.sbAndRefpix)
             h3 = fits.ImageHDU(self.zeroModel.data)
-            h4 = fits.ImageHDU(self.zeroModel.sbAndRefPix)
+            h4 = fits.ImageHDU(self.zeroModel.sbAndRefpix)
             hl=fits.HDUList([h0,h1,h2,h3,h4])
             hl.writeto(self.basename + '_linearizedDark.fits',overwrite=True)
 
