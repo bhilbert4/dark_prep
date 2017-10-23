@@ -31,7 +31,7 @@ class DarkPrep:
         self.modpath = imp.find_module('dark_prep')[1]
 
 
-    def run(self):
+    def prepare(self):
         # Read in the yaml parameter file
         self.readParameterFile()
 
@@ -152,19 +152,48 @@ class DarkPrep:
             sys.exit()
                 
         #save the linearized dark for testing
-        if self.params['Output']['save_intermediates']:
-            h0 = fits.PrimaryHDU()
-            h1 = fits.ImageHDU(self.linDark.data)
-            h2 = fits.ImageHDU(self.linDark.sbAndRefpix)
-            h3 = fits.ImageHDU(self.zeroModel.data)
-            h4 = fits.ImageHDU(self.zeroModel.sbAndRefpix)
-            hl=fits.HDUList([h0,h1,h2,h3,h4])
-            hl.writeto(self.basename + '_linearizedDark.fits',overwrite=True)
+	#if self.params['Output']['save_intermediates']:
+        h0 = fits.PrimaryHDU()
+        h1 = fits.ImageHDU(self.linDark.data,name='SCI')
+        h2 = fits.ImageHDU(self.linDark.sbAndRefpix,name='SBANDREFPIX')
+        h3 = fits.ImageHDU(self.zeroModel.data,name='ZEROFRAME')
+        h4 = fits.ImageHDU(self.zeroModel.sbAndRefpix,name='ZEROSBANDREFPIX')
+
+        # Populate basic info in the 0th extension header
+        nints,ngroups,yd,xd = self.linDark.data.shape
+        h0.header['READPATT'] = self.params['Readout']['readpatt'].upper()
+        h0.header['NINTS'] = nints
+        h0.header['NGROUPS'] = ngroups
+        h0.header['NFRAMES'] = self.params['Readout']['nframe']
+        h0.header['NSKIP'] = self.params['Readout']['nskip']
+        h0.header['DETECTOR'] = self.detector
+        h0.header['INSTRUME'] = self.instrument
+        h0.header['SLOWAXIS'] = self.slowaxis
+        h0.header['FASTAXIS'] = self.fastaxis
+        
+        hl=fits.HDUList([h0,h1,h2,h3,h4])
+        objname = self.basename + '_linear_dark_prep_object.fits'
+        objname = os.path.join(self.params['Output']['directory'],objname)
+        hl.writeto(objname,overwrite=True)
+        print('Linearized dark frame plus superbias and reference')
+        print(('pixel signals, as well as zeroframe, saved to {}.'
+	       'This can be used as input to the observation '
+	       'generator.'
+	       .format(objname)))
 
         #important variables
         #self.linDark
         #self.zeroModel
-
+        # Make a read_fits instance that contains all the important
+        # information, for ease in connecting with next step of the
+        # simulator
+        self.prepDark = read_fits.Read_fits()
+        self.prepDark.data = self.linDark.data
+        self.prepDark.zeroframe = self.zeroModel.data
+        self.prepDark.sbAndRefpix = self.linDark.sbAndRefpix
+        self.prepDark.zero_sbAndRefpix = self.zeroModel.sbAndRefpix
+        self.prepDark.header = self.linDark.header
+        
 
     def fullPaths(self):
         # Expand all input paths to be full paths
@@ -186,6 +215,7 @@ class DarkPrep:
 
         config_files = {'Reffiles-readpattdefs':'nircam_read_pattern_definitions.list'
                         ,'Reffiles-subarray_defs':'NIRCam_subarray_definitions.list'
+                        ,'Reffiles-crosstalk':'xtalk20150303g0.errorcut.txt'
                         ,'newRamp-dq_configfile':'dq_init.cfg'
                         ,'newRamp-sat_configfile':'saturation.cfg'
                         ,'newRamp-superbias_configfile':'superbias.cfg'
@@ -323,12 +353,14 @@ class DarkPrep:
         # re-run the pipeline when using the same dark current file in the
         # future. Use the linearity coefficient file if provided
         linearoutfile = self.params['Output']['file'][0:-5] + '_linearized_dark_current_ramp.fits'
+        linearoutfile = os.path.join(self.params['Output']['directory'],linearoutfile)
         if self.runStep['linearity']:
             linDark = LinearityStep.call(linDark,config_file=self.params['newRamp']['linear_configfile'],override_linearity=self.params['Reffiles']['linearity'],output_file=linearoutfile)
         else:
             linDark = LinearityStep.call(linDark,config_file=self.params['newRamp']['linear_configfile'],output_file=linearoutfile)
 
-        print('Linearized dark saved as {}'.format(linearoutfile))
+        print(('Linearized dark (output directly from pipeline) '
+	       'saved as {}'.format(linearoutfile)))
 
         #Now we need to put the data back into a read_fits object
         linDarkobj = read_fits.Read_fits()
