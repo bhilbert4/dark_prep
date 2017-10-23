@@ -42,7 +42,8 @@ class Read_fits():
         self.data = self.model.data
         self.zeroframe = self.model.zeroframe
         self.sbAndRefpix = None
-
+        self.zero_sbAndRefpix = None
+        
         self.header = {}
         for key in self.translate:
             try:
@@ -60,7 +61,7 @@ class Read_fits():
         self.data = None
         self.zeroframe = None
         self.sbAndRefpix = None
-        for i in xrange(len(h)):
+        for i in range(len(h)):
             name = h[i].name
             if name == 'SCI':
                 self.data = h[i].data
@@ -68,7 +69,9 @@ class Read_fits():
                 self.zeroframe = h[i].data
             if name == 'SBANDREFPIX':
                 self.sbAndRefpix = h[i].data
-
+            if name == 'ZEROSBANDREFPIX':
+                self.zero_sbAndRefpix = h[i].data
+                
         #to match what happens with the RampModel version,
         #populate any of the remaining None extensions with
         #arrays of zeros
