@@ -129,8 +129,8 @@ class DarkPrep:
 
             if self.zeroModel is not None:
                 self.zeroModel = self.cropDark(self.zeroModel)
-        elif ((self.params['Inst']['use_JWST_pipeline'] == False) & (self.runStep['linearized_darkfile'] == True)):
-
+        #elif ((self.params['Inst']['use_JWST_pipeline'] == False) & (self.runStep['linearized_darkfile'] == True)):
+        elif self.runStep['linearized_darkfile'] == True:
             # If no pipeline is run
             self.zeroModel = read_fits.Read_fits()
             self.zeroModel.data = self.dark.zeroframe
@@ -147,7 +147,8 @@ class DarkPrep:
         else:
             print("Mode not yet supported! Must use either:")
             print("use_JWST_pipeline = True and a raw or linearized dark")
-            print("or use_JWST_pipeline = False and supply a linearized dark.")
+            #print("or use_JWST_pipeline = False and supply a linearized dark.")
+            print("or supply a linearized dark.")
             print("Cannot yet skip the pipeline and provide a raw dark.")
             sys.exit()
                 
@@ -199,18 +200,21 @@ class DarkPrep:
         # Expand all input paths to be full paths
         # This is to allow for easier Condor-ization of
         # many runs
-        pathdict = {'Reffiles':['dark','linearized_darkfile','hotpixmask','superbias',
-                                'subarray_defs','readpattdefs','linearity',
-                                'saturation','gain','pixelflat',
-                                'illumflat','astrometric','distortion_coeffs','ipc',
-                                'crosstalk','occult','filtpupilcombo','pixelAreaMap',
-                                'flux_cal'],
+        pathdict = {'Reffiles':['dark','linearized_darkfile','hotpixmask',
+                                'superbias','subarray_defs','readpattdefs',
+                                'linearity','saturation','gain','pixelflat',
+                                'illumflat','astrometric',
+                                'distortion_coeffs','ipc','crosstalk',
+                                'occult','pixelAreaMap'],
                     'cosmicRay':['path'],
-                    'simSignals':['pointsource','psfpath','galaxyListFile','extended',
-                                  'movingTargetList','movingTargetSersic',
-                                  'movingTargetExtended','movingTargetToTrack'],
-                    'newRamp':['dq_configfile','sat_configfile','superbias_configfile',
-                               'refpix_configfile','linear_configfile'],
+                    'simSignals':['pointsource','psfpath','galaxyListFile',
+                                  'extended','movingTargetList',
+                                  'movingTargetSersic',
+                                  'movingTargetExtended',
+                                  'movingTargetToTrack'],
+                    'newRamp':['dq_configfile','sat_configfile',
+                               'superbias_configfile','refpix_configfile',
+                               'linear_configfile'],
                     'Output':['file','directory']}
 
         config_files = {'Reffiles-readpattdefs':'nircam_read_pattern_definitions.list'
@@ -497,7 +501,8 @@ class DarkPrep:
         if ((darkpatt == 'RAPID') and (self.params['Readout']['readpatt'] != 'RAPID')): 
 
             deltaframe = self.params['Readout']['nskip']+self.params['Readout']['nframe']
-            frames = np.arange(0,self.params['Readout']['nframe'])
+            framesPerGroup = self.params['Readout']['nframe'] + self.params['Readout']['nskip']
+            frames = np.arange(self.params['Readout']['nskip'],framesPerGroup)
             accumimage = np.zeros_like(outdark[0,0,:,:],dtype=datatype)
 
             if dark.sbAndRefpix is not None:
@@ -695,8 +700,14 @@ class DarkPrep:
             mtch = self.params['Readout']['readpatt'] == self.readpatterns['name']
             self.params['Readout']['nframe'] = self.readpatterns['nframe'][mtch].data[0]
             self.params['Readout']['nskip'] = self.readpatterns['nskip'][mtch].data[0]
-            print('Requested readout pattern {} found in {}. Using the nframe and nskip'.format(self.params['Readout']['readpatt'],self.params['Reffiles']['readpattdefs']))
-            print('values from the definition file. nframe = {} and nskip = {}.'.format(self.params['Readout']['nframe'],self.params['Readout']['nskip']))
+            print(('Requested readout pattern {}.'
+                  .format(self.params['Readout']['readpatt'])))
+            print(('Using the nframe and nskip values from the '
+                   'definition file:'))
+            print('{}'.format(self.params['Reffiles']['readpattdefs']))
+            print(('nframe = {} and nskip = {}.'
+                   .format(self.params['Readout']['nframe'],
+                           self.params['Readout']['nskip'])))
         else:
             #if readpatt is not present in the definition file but the nframe/nskip combo is, then reset 
             #readpatt to the appropriate value from the definition file
