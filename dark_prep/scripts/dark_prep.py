@@ -30,6 +30,11 @@ class DarkPrep:
         # for config subdirectory
         self.modpath = imp.find_module('dark_prep')[1]
 
+        # URL from which to download darks if they
+        # are not present locally
+        #self.dark_url = "http://dw.stsci.edu/temp/"
+        self.dark_url = "https://hz3c.stsci.edu"
+        
 
     def prepare(self):
         # Read in the yaml parameter file
@@ -53,6 +58,9 @@ class DarkPrep:
 
         # Define the subarray bounds from param file
         self.getSubarrayBounds()
+
+        need to update readLinearDark to also follow
+        URL if necessary
         
         # Read in the input dark current frame
         if self.runStep['linearized_darkfile'] == False:
@@ -238,8 +246,27 @@ class DarkPrep:
 
                     
     def getBaseDark(self):
-        #read in the dark current ramp that will serve as the
-        #base for the simulated ramp
+        # Read in the dark current ramp that will serve as the
+        # base for the simulated ramp
+
+        # First make sure that the file exists
+        local = os.path.isfile(self.params['Reffiles']['dark'])
+        if local == False:
+            #try:
+            if 1 > 0:
+                print("Local copy of dark current file")
+                print("{} not found.".format(self.params['Reffiles']['dark']))
+                print( "Downloading.")
+                darkfile = os.path.split(self.params['Reffiles']['dark'])[1]
+                hh = fits.open(os.path.join(self.dark_url,darkfile))
+                hh.writeto(self.params['Reffiles']['dark'])
+            #except:
+            else:
+                print("Local copy of dark current file")
+                print("{} not found.".format(self.params['Reffiles']['dark']))
+                print("And unable to download. Quitting.")
+                sys.exit()
+                               
         self.dark = read_fits.Read_fits()
         self.dark.file = self.params['Reffiles']['dark']
 
@@ -249,7 +276,8 @@ class DarkPrep:
             self.dark.read_datamodel()
 
             try:
-                #remove non-pipeline related keywords (e.g. CV3 temps/voltages)
+                # Remove non-pipeline related keywords
+                # (e.g. CV3 temps/voltages)
                 self.dark.__delattr__('extra_fits')
             except:
                 pass
