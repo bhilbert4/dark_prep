@@ -61,6 +61,7 @@ class Read_fits():
         self.data = None
         self.zeroframe = None
         self.sbAndRefpix = None
+        self.zero_sbAndRefpix = None
         for i in range(len(h)):
             name = h[i].name
             if name == 'SCI':
@@ -103,7 +104,11 @@ class Read_fits():
         #zeros, then set it to None here
         #self.zeroframe = h.zeroframe
         if np.all(h.zeroframe == 0):
+            print("Zeroframe in {}".format(self.file))
+            print("All zeros. Returning None.")
             self.zeroframe = None
+        else:
+            self.zeroframe = h.zeroframe
         
         self.sbAndRefpix = None
             
