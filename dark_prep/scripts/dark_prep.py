@@ -15,6 +15,7 @@ input files for the refactored simulator...
 import sys, os
 import imp
 import argparse
+from math import floor
 import numpy as np
 from astropy.io import fits, ascii
 import yaml
@@ -59,8 +60,8 @@ class DarkPrep:
         # Define the subarray bounds from param file
         self.getSubarrayBounds()
 
-        need to update readLinearDark to also follow
-        URL if necessary
+        print("need to update readLinearDark to also follow")
+        print("URL if necessary")
         
         # Read in the input dark current frame
         if self.runStep['linearized_darkfile'] == False:
@@ -592,8 +593,7 @@ class DarkPrep:
 
         return dark,sbzero
 
-
-        
+   
     def darkints(self):
         # Check the number of integrations in the dark
         # current file and compare with the requested
@@ -619,6 +619,38 @@ class DarkPrep:
             self.integration_copy(reqints,ndarkints)
 
 
+    def integration_copy(self,req,darkint):
+        #use copies of integrations in the dark current input to
+        #make up integrations in the case where the output has
+        #more integrations than the input
+        ncopies = np.int((req - darkint) / darkint)
+        extras = (req - darkint) % darkint
+
+        #full copies of the dark exposure (all integrations)
+        if ncopies > 0:
+            copydata = self.dark.data
+            if self.dark.sbAndRefpix is not None:
+                copysb = self.dark.sbAndRefpix
+            if self.dark.zeroframe is not None:
+                copyzero = self.dark.zero
+            for i in range(ncopies):
+                self.dark.data = np.vstack((self.dark.data,copydata))
+                if self.dark.sbAndRefpix is not None:
+                    self.dark.sbAndRefpix = np.vstack((self.dark.sbAndRefpix,copysb))
+                if self.dark.zeroframe is not None:
+                    self.dark.zeroframe = np.vstack((self.dark.zeroframe,copyzero))
+                
+        #partial copy of dark (some integrations)
+        if extras > 0:
+            self.dark.data = np.vstack((self.dark.data,self.dark.data[0:extras,:,:,:]))
+            if self.dark.sbAndRefpix is not None:
+                self.dark.sbAndRefpix = np.vstack((self.dark.sbAndRefpix,self.dark.sbAndRefpix[0:extras,:,:,:]))
+            if self.dark.zeroframe is not None:
+                self.dark.zeroframe = np.vstack((self.dark.zeroframe,self.dark.zeroframe[0:extras,:,:]))
+
+        self.dark.header['NINTS'] = req
+
+
     def dataVolumeCheck(self,obj):
         # Make sure that the input integration has
         # enough frames/groups to create the requested
@@ -635,14 +667,14 @@ class DarkPrep:
 
             # Figure out how many more frames we need,
             # in terms of how many copies of the original dark
-            div = (ngroup*(nskip+nframe)) / inputframes
+            div = floor((ngroup*(nskip+nframe)) / inputframes)
             mod = (ngroup*(nskip+nframe)) % inputframes
             
             # If more frames are needed than there are frames
             # in the original dark, then make copies of the
             # entire thing as many times as necessary, adding
             # the signal from the previous final frame to each.
-            for ints in xrange(div-1):
+            for ints in range(div-1):
                 extra_frames = np.copy(obj.data)
                 obj.data = np.hstack((obj.data,extra_frames+obj.data[:,-1,:,:]))
                 if obj.sbAndRefpix is not None:
